@@ -1,17 +1,8 @@
 #include "cp.h"
+#include "vector.h"
 #include <cmath>
 #include <new>
 #include <x86intrin.h>
-
-typedef double double4_t __attribute__ ((vector_size (4 * sizeof(double))));
-
-static double4_t* double4_alloc(std::size_t n) {
-    void* tmp = 0;
-    if (posix_memalign(&tmp, sizeof(double4_t), sizeof(double4_t) * n)) {
-        throw std::bad_alloc();
-    }
-    return (double4_t*)tmp;
-}
 
 static inline double4_t swap1(double4_t x) { return _mm256_permute_pd(x, 5); }
 static inline double4_t swap2(double4_t x) { return _mm256_permute2f128_pd(x, x, 1); }
