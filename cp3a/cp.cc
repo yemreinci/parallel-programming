@@ -59,8 +59,8 @@ void correlate(int ny, int nx, const float* data, float* result) {
                         //__builtin_prefetch(&normal[ia*nx + k + PF]);
                         //__builtin_prefetch(&normal[ja*nx + k + PF]);
 
-                        double4_t a00 = normal[k + (ia*nd + jd)*nx];
-                        double4_t b00 = normal[k + (ja*nd + id)*nx];
+                        double4_t a00 = normal[k + (ia*nd + id)*nx];
+                        double4_t b00 = normal[k + (ja*nd + jd)*nx];
                         double4_t a01 = swap1(a00);
                         double4_t b10 = swap2(b00);
 
@@ -77,8 +77,8 @@ void correlate(int ny, int nx, const float* data, float* result) {
                 for (int id = 0; id < nd; id++) {
                     for (int k = 0; k < nb; k++) {
                         for (int r = 0; r < nb; r++) {
-                            int j = ((ja*nd + id)*nb + (k ^ (r & 2)));
-                            int i = ((ia*nd + jd)*nb + (k ^ (r & 1)));
+                            int j = ((ja*nd + jd)*nb + (k ^ (r & 2)));
+                            int i = ((ia*nd + id)*nb + (k ^ (r & 1)));
                             if (j < ny && i < ny && i >= j)
                                 result[i + j*ny] = t[jd][id][r][k];
                         }
