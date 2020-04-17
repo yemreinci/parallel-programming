@@ -1,7 +1,6 @@
 #include "so.h"
 #include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <omp.h>
 
 void psort(int n, data_t* data) {
