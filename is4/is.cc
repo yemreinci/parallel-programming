@@ -39,8 +39,9 @@ Result segment(int ny, int nx, const float* data) {
             for (int lx = 1; lx <= nx; lx++) {
                 if (ly == ny && lx == nx)
                     continue;
-                double area1 = ly*lx;
-                double area2 = ny*nx - area1;
+
+                double area1 = 1.0 / (ly*lx);
+                double area2 = 1.0 / (ny*nx - ly*lx);
 
                 for (int j = 0; j < ny-ly+1; j++) {
                     for (int i = 0; i < nx-lx+1; i++) {
@@ -49,9 +50,9 @@ Result segment(int ny, int nx, const float* data) {
                         
                         t1 = t1 * t1;
                         t2 = t2 * t2;
-
-                        double avg1 = (t1[0] + t1[1] + t1[2]) / area1;
-                        double avg2 = (t2[0] + t2[1] + t2[2]) / area2;
+                        
+                        double avg1 = (t1[0] + t1[1] + t1[2]) * area1;
+                        double avg2 = (t2[0] + t2[1] + t2[2]) * area2;
 
                         if (avg1 + avg2 > my_best) {
                             my_best = avg1 + avg2;
