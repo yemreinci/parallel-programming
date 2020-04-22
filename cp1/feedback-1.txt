@@ -1,0 +1,9 @@
+0
+
+Looks good!
+
+No need to use new/delete, please consider using std::vector instead.
+
+--
+Grading by:
+jukka
