@@ -19,12 +19,13 @@ void mf(int ny, int nx, int hy, int hx, const float* in, float* out) {
             }
             
             nth_element(window, window + (wi/2), window + wi);
+            float t = window[wi/2];
             if (wi % 2) {
-                out[x + nx*y] = window[wi/2];
+                out[x + nx*y] = t;
             }
             else {
                 nth_element(window, window + (wi/2 - 1), window + wi);
-                out[x + nx*y] = (window[wi/2] + window[wi/2 - 1]) / 2;
+                out[x + nx*y] = (t + window[wi/2 - 1]) / 2;
             }
         }
         
