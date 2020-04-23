@@ -1,0 +1,9 @@
+0
+
+A good starting point! :)
+
+I would next see if you can eliminate some arithmetic operations in the innermost loop...
+
+--
+Grading by:
+jukka
