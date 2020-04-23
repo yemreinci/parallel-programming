@@ -8,7 +8,7 @@
 #define DBG(x) {}
 
 Result segment(int ny, int nx, const float* data) { // std::cout << std::endl;
-    constexpr int nd = 3;
+    constexpr int nd = 4;
     int nb = (nx + nd - 1) / nd;
     int na = nb * nd;
 
@@ -37,6 +37,7 @@ Result segment(int ny, int nx, const float* data) { // std::cout << std::endl;
 
     double best = 0;
     Result res = {};
+    double4_t sumall = SUM(ny, nx);
 
     #pragma omp parallel
     {
@@ -46,12 +47,13 @@ Result segment(int ny, int nx, const float* data) { // std::cout << std::endl;
         #pragma omp for schedule(static, 1) nowait
         for (int ly = 1; ly <= ny; ly++) {
             for (int lxb = 0; lxb < nb; lxb++) {
-                double area1[nd], area2[nd];
+                double area1[nd], area2[nd], areac[nd];
 
                 for (int lxd = 1; lxd <= nd; lxd++) {
                     int lx = lxb*nd + lxd;
                     area1[lxd-1] = 1.0 / (ly*lx);
                     area2[lxd-1] = 1.0 / (ny*nx - ly*lx);
+                    areac[lxd-1] = area1[lxd-1] + area2[lxd-1];
                 }
 
                 for (int j = 0; j < ny-ly+1; j++) {
@@ -62,17 +64,14 @@ Result segment(int ny, int nx, const float* data) { // std::cout << std::endl;
                                 int lx = lxd + lxb*nd;
                                 int i = id + ib*nd;
 
-                                double4_t t1 = SUM4(j, i, ly, lx);
-                                double4_t t2 = SUM(ny, nx) - t1;
+                                double4_t t = SUM4(j, i, ly, lx);
 
-                                t1 = t1 * t1;
-                                t2 = t2 * t2;
-                                
-                                double avg1 = (t1[0] + t1[1] + t1[2]) * area1[lxd-1];
-                                double avg2 = (t2[0] + t2[1] + t2[2]) * area2[lxd-1];
+                                t = t * t * areac[lxd-1] + sumall * area2[lxd-1] * (sumall  - 2 * t);
 
-                                if (avg1 + avg2 > my_best[id]) {
-                                    my_best[id] = avg1 + avg2;
+                                double val = t[0] + t[1] + t[2];
+
+                                if (val > my_best[id]) {
+                                    my_best[id] = val;
                                     my_res[id].y0 = j;
                                     my_res[id].y1 = j + ly;
                                     my_res[id].x0 = i;
