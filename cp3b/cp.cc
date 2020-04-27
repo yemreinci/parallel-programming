@@ -63,15 +63,15 @@ void correlate(int ny, int nx, const float* data, float* result) {
     }
 
     // WITH Z
-    // #pragma omp parallel for schedule(static, 20)
-    // for (int it = 0; it < n_jia; it++) {
-    //     int ja = jia_list[it].first;
-    //     int ia = jia_list[it].second;
+    #pragma omp parallel for schedule(static, 20)
+    for (int it = 0; it < n_jia; it++) {
+        int ja = jia_list[it].first;
+        int ia = jia_list[it].second;
 
     // WITHOUT Z
-    #pragma omp parallel for schedule(static, 1)
-    for (int ja = 0; ja < na; ja++)
-    for (int ia = ja; ia < na; ia++){
+    // #pragma omp parallel for schedule(static, 1)
+    // for (int ja = 0; ja < na; ja++)
+    // for (int ia = ja; ia < na; ia++){
         
         float8_t t[nb] = {};
 
