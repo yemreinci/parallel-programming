@@ -103,7 +103,7 @@ TASKS = [
         'benchmark': ['./cp-benchmark', '4000', '1000'],
         'benchmarktest': ['./cp-test', '4000', '1000', '2'],
         'time': [3.5, 5.0, 8.0],
-        'week': 2,
+        'week': 3,
         'max': [3,2],
     },
     {
