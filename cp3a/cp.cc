@@ -17,6 +17,7 @@ void correlate(int ny, int nx, const float* data, float* result) {
     int ne = 1 << (32 - _lzcnt_u32(nc - 1)); // smallest power of 2 larger than na/nd
 
     double4_t* normal = double4_alloc(na * nx);
+    double* db_res = new double[ny*ny];
 
     #pragma omp parallel for schedule(static, 1)
     for (int ja = 0; ja < na; ja++) {
@@ -63,21 +64,21 @@ void correlate(int ny, int nx, const float* data, float* result) {
         }
     }   
 
-    #define CHUNK 20
-    constexpr int PF = 9;
-
-    #pragma omp parallel for schedule(static, CHUNK)
+    // WITH Z
+    #pragma omp parallel for schedule(static, 20)
     for (int it = 0; it < n_jia; it++) {
         int ja = jia_list[it].first;
         int ia = jia_list[it].second;
 
+    // WITHOUT Z
     // #pragma omp parallel for schedule(static, 1)
     // for (int ja = 0; ja < nc; ja++)
     //     for (int ia = ja; ia < nc; ia++) {
 
             double4_t t[nd][nd][nb] = {};
 
-            for (int k = 0; k < nx / 2; k++) {
+            for (int k = 0; k < nx/3; k++) {
+                constexpr int PF = 9;
                 __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
                 __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
                 __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
@@ -108,7 +109,7 @@ void correlate(int ny, int nx, const float* data, float* result) {
                             int j = (ja*nd + jd)*nb + (k ^ r);
                             int i = (ia*nd + id)*nb + (k);
                             if (j < ny && i < ny && i >= j)
-                                result[i + j*ny] = t[jd][id][r][k];
+                                db_res[i + j*ny] = t[jd][id][r][k];
                         }
                     } 
                 }
@@ -116,18 +117,74 @@ void correlate(int ny, int nx, const float* data, float* result) {
 
         }
 
-    #pragma omp parallel for schedule(static, CHUNK)
+    // WITH Z
+    #pragma omp parallel for schedule(static, 20)
     for (int it = 0; it < n_jia; it++) {
         int ja = jia_list[it].first;
         int ia = jia_list[it].second;
 
+    // WITHOUT Z
     // #pragma omp parallel for schedule(static, 1)
     // for (int ja = 0; ja < nc; ja++)
     //     for (int ia = ja; ia < nc; ia++) {
 
             double4_t t[nd][nd][nb] = {};
 
-            for (int k = nx / 2; k < nx; k++) {
+            for (int k = nx/3; k < nx/3*2; k++) {
+                constexpr int PF = 9;
+                __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
+                __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
+                __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
+                __builtin_prefetch(&normal[k + (ia*nd + 1)*nx + PF]);
+
+                for (int jd = 0; jd < nd; jd++) {
+                    double4_t b00 = normal[k + (ja*nd + jd)*nx];
+                    double4_t b10 = swap2(b00);
+                    double4_t b01 = swap1(b00);
+                    double4_t b11 = swap1(b10);
+
+                    for (int id = 0; id < nd; id++) {
+                        double4_t a00 = normal[k + (ia*nd + id)*nx];
+
+                        t[jd][id][0] += a00 * b00;
+                        t[jd][id][1] += a00 * b01;
+                        t[jd][id][2] += a00 * b10;
+                        t[jd][id][3] += a00 * b11;
+                    }
+                }
+            }
+
+
+            for (int jd = 0; jd < nd; jd++) {
+                for (int id = 0; id < nd; id++) {
+                    for (int k = 0; k < nb; k++) {
+                        for (int r = 0; r < nb; r++) {
+                            int j = (ja*nd + jd)*nb + (k ^ r);
+                            int i = (ia*nd + id)*nb + (k);
+                            if (j < ny && i < ny && i >= j)
+                              result[i + j*ny] = db_res[i + j*ny] + t[jd][id][r][k];
+                        }
+                    } 
+                }
+            }
+
+        }
+    
+    // WITH Z
+    #pragma omp parallel for schedule(static, 20)
+    for (int it = 0; it < n_jia; it++) {
+        int ja = jia_list[it].first;
+        int ia = jia_list[it].second;
+
+    // WITHOUT Z
+    // #pragma omp parallel for schedule(static, 1)
+    // for (int ja = 0; ja < nc; ja++)
+    //     for (int ia = ja; ia < nc; ia++) {
+
+            double4_t t[nd][nd][nb] = {};
+
+            for (int k = nx/3*2; k < nx; k++) {
+                constexpr int PF = 9;
                 __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
                 __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
                 __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
@@ -166,5 +223,7 @@ void correlate(int ny, int nx, const float* data, float* result) {
 
         }
 
+
     free(normal);
+    delete[] db_res;
 }
