@@ -62,50 +62,56 @@ void correlate(int ny, int nx, const float* data, float* result) {
         }
     }
 
-    // WITH Z
-    #pragma omp parallel for schedule(static, 20)
-    for (int it = 0; it < n_jia; it++) {
-        int ja = jia_list[it].first;
-        int ia = jia_list[it].second;
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < ny; i++) {
+            result[i + j*ny] = 0;
+        }
+    }
 
-    // WITHOUT Z
-    // #pragma omp parallel for schedule(static, 1)
-    // for (int ja = 0; ja < na; ja++)
-    // for (int ia = ja; ia < na; ia++){
-        
-        float8_t t[nb] = {};
+    for (int half = 0; half < 2; half++) {
+        int k_from = half ? nx/2 : 0;
+        int k_to = half ? nx : nx/2; 
 
-        for (int k = 0; k < nx; k++) {
-            constexpr int PF = 16;
-            __builtin_prefetch(&normal[ia*nx + k + PF]);
-            __builtin_prefetch(&normal[ja*nx + k + PF]);
+        #pragma omp parallel for schedule(static, 20)
+        for (int it = 0; it < n_jia; it++) {
+            int ja = jia_list[it].first;
+            int ia = jia_list[it].second;
+            
+            float8_t t[nb] = {};
 
-            float8_t a000 = normal[k + ia*nx];
-            float8_t b000 = normal[k + ja*nx];
-            float8_t a100 = swap4(a000);
-            float8_t a010 = swap2(a000);
-            float8_t a110 = swap2(a100);
-            float8_t b001 = swap1(b000);
+            for (int k = k_from; k < k_to; k++) {
+                constexpr int PF = 18;
+                __builtin_prefetch(&normal[ia*nx + k + PF]);
+                __builtin_prefetch(&normal[ja*nx + k + PF]);
 
-            t[0] += a000 * b000;
-            t[1] += a000 * b001;
-            t[2] += a010 * b000;
-            t[3] += a010 * b001;
-            t[4] += a100 * b000;
-            t[5] += a100 * b001;
-            t[6] += a110 * b000;
-            t[7] += a110 * b001;
+                float8_t a000 = normal[k + ia*nx];
+                float8_t b000 = normal[k + ja*nx];
+                float8_t a100 = swap4(a000);
+                float8_t a010 = swap2(a000);
+                float8_t a110 = swap2(a100);
+                float8_t b001 = swap1(b000);
+
+                t[0] += a000 * b000;
+                t[1] += a000 * b001;
+                t[2] += a010 * b000;
+                t[3] += a010 * b001;
+                t[4] += a100 * b000;
+                t[5] += a100 * b001;
+                t[6] += a110 * b000;
+                t[7] += a110 * b001;
+            }
+
+
+            for (int k = 0; k < nb; k++) {
+                for (int r = 0; r < nb; r++) {
+                    int j = ja*nb + (k ^ (r & 1));
+                    int i = ia*nb + (k ^ (r & 6));
+                    if (j < ny && i < ny && i >= j)
+                        result[i + j*ny] += t[r][k];
+                }
+            } 
         }
 
-
-        for (int k = 0; k < nb; k++) {
-            for (int r = 0; r < nb; r++) {
-                int j = ja*nb + (k ^ (r & 1));
-                int i = ia*nb + (k ^ (r & 6));
-                if (j < ny && i < ny && i >= j)
-                    result[i + j*ny] = t[r][k];
-            }
-        } 
     }
 
     free(normal);
