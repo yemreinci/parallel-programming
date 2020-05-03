@@ -1,4 +1,5 @@
 #include "so.h"
+#include "timer.h"
 #include <algorithm>
 #include <iostream>
 #include <omp.h>
@@ -21,7 +22,7 @@ void parallel_qsort(int n, data_t* data, int n_thr) {
     {
         int thread_n = omp_get_thread_num();
         int i = block_sz * omp_get_thread_num();
-        int end = std::min(i + block_sz, n);
+        int end = std::min(i + block_sz/2, n);
         int mid = (i + end) / 2;
         std::nth_element(data + i,
                          data + mid, 
@@ -55,6 +56,6 @@ void parallel_qsort(int n, data_t* data, int n_thr) {
 
 void psort(int n, data_t* data) {
     omp_set_nested(1);
-
+    
     parallel_qsort(n, data, omp_get_max_threads());
 }
