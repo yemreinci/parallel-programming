@@ -90,8 +90,8 @@ Result segment(int ny, int nx, const float* data) {
 
     #pragma omp parallel
     {
-        double my_best = 0;
-        Result my_res;
+        double my_best[4] = {};
+        Result my_res[4];
 
         #pragma omp for schedule(static, 1) nowait
         for (int ly = 1; ly <= ny; ly++) {
@@ -110,14 +110,14 @@ Result segment(int ny, int nx, const float* data) {
 
 
                     for (int ib = 0; ib < nb-lxb; ib++) {
-                        double4_t t[3][4];
                         double4_t val[4] = {};
-
+                        
                         for (int c = 0; c < 3; c++) {
                             double4_t a00 = sum[c + ib*3 + j*nb*3];
                             double4_t b00 = sum[c + (ib+lxb)*3 + j*nb*3];
                             double4_t c00 = sum[c + ib*3 + (j+ly)*nb*3];
                             double4_t d00 = sum[c + (ib+lxb)*3 + (j+ly)*nb*3];
+                            double4_t ac = a00 - c00;
 
                             double4_t b10 = swap2(b00);
                             double4_t b01 = swap1(b00);
@@ -127,33 +127,31 @@ Result segment(int ny, int nx, const float* data) {
                             double4_t d01 = swap1(d00);
                             double4_t d11 = swap1(d10);
 
-                            t[c][0] = d00 - b00 - c00 + a00;
-                            val[0] += t[c][0] * t[c][0] * areac[0] + sumall[c] * area2[0] * (sumall[c] - 2*t[c][0]);
+                            double4_t t0 = d00 - b00 + ac;
+                            val[0] += t0 * t0 * areac[0] + sumall[c] * area2[0] * (sumall[c] - 2*t0);
 
-                            t[c][1] = d01 - b01 - c00 + a00;
-                            val[1] += t[c][1] * t[c][1] * areac[1] + sumall[c] * area2[1] * (sumall[c] - 2*t[c][1]);
+                            double4_t t1 = d01 - b01 + ac;
+                            val[1] += t1 * t1 * areac[1] + sumall[c] * area2[1] * (sumall[c] - 2*t1);
                             
-                            t[c][2] = d10 - b10 - c00 + a00;
-                            val[2] += t[c][2] * t[c][2] * areac[2] + sumall[c] * area2[2] * (sumall[c] - 2*t[c][2]);
+                            double4_t t2 = d10 - b10 + ac;
+                            val[2] += t2 * t2 * areac[2] + sumall[c] * area2[2] * (sumall[c] - 2*t2);
                             
-                            t[c][3] = d11 - b11 - c00 + a00;
-                            val[3] += t[c][3] * t[c][3] * areac[3] + sumall[c] * area2[3] * (sumall[c] - 2*t[c][3]);
+                            double4_t t3 = d11 - b11 + ac;
+                            val[3] += t3 * t3 * areac[3] + sumall[c] * area2[3] * (sumall[c] - 2*t3);
                         }
 
-                        for (int id1 = 0; id1 < nd; id1++) {
-                            for (int k = 0; k < nd; k++) {
+                        for (int k = 0; k < nd; k++) {
+                            for (int id1 = 0; id1 < nd; id1++) {
                                 int id2 = id1 ^ k;
-                                if (val[k][id1] > my_best) {
-                                    my_best = val[k][id1];
-                                    my_res.y0 = j;
-                                    my_res.y1 = j + ly;
-                                    my_res.x0 = id1 + ib*nd;
-                                    my_res.x1 = id2 + (ib+lxb)*nd;
+                                if (val[k][id1] > my_best[id1]) {
+                                    my_best[id1] = val[k][id1];
+                                    my_res[id1].y0 = j;
+                                    my_res[id1].y1 = j + ly;
+                                    my_res[id1].x0 = id1 + ib*nd;
+                                    my_res[id1].x1 = id2 + (ib+lxb)*nd;
                                 }
                             }
                         }
-
-
                     }
                 }
             }
@@ -161,9 +159,11 @@ Result segment(int ny, int nx, const float* data) {
 
         #pragma omp critical
         {
-            if (my_best > best) {
-                best = my_best;
-                res = my_res;
+            for (int i = 0; i < nd; i++) {
+                if (my_best[i] > best) {
+                    best = my_best[i];
+                    res = my_res[i];
+                }
             }
         }
     }
