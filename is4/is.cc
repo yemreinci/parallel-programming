@@ -93,7 +93,7 @@ Result segment(int ny, int nx, const float* data) {
         double my_best[4] = {};
         Result my_res[4];
 
-        #pragma omp for schedule(static, 1) nowait
+        #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
             for (int lxb = 0; lxb <= nb; lxb++) {
                 for (int j = 0; j <= ny-ly; j++) {
