@@ -1,110 +1,183 @@
 #include "is.h"
 #include <omp.h>
 #include <iostream>
+#include <iomanip>
 #include <cmath>
 #include "vector.h"
+#include <x86intrin.h>
 
 //#define DBG(x) std::cout << #x << " = " << x << std::endl;
 #define DBG(x) {}
 
-Result segment(int ny, int nx, const float* data) { // std::cout << std::endl;
-    constexpr int nd = 4;
-    int nb = (nx + nd - 1) / nd;
-    int na = nb * nd;
-
-    double4_t* sum = double4_alloc((ny+1) * (na+nd));
-
-    #define SUM(j, i) sum[(i) + (j)*(na+nd)]
-    #define SUM4(j, i, ly, lx) SUM((j) + (ly), (i) + (lx)) - SUM((j) + (ly), (i)) - SUM((j), (i) + (lx)) + SUM((j), (i))  
-
-    for (int i = 0; i <= nx; i++) {
-        SUM(0, i) = double4_0;
-    }
+static void printall(int ny, int nx, int nb, int nd, const float* data, const double4_t* sum) {
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << std::endl;
     for (int j = 0; j < ny; j++) {
-        SUM(j + 1, 0) = double4_0;
         for (int i = 0; i < nx; i++) {
-            for (int c = 0; c < 3; c++) {
-                SUM(j + 1, i + 1)[c] = data[c + i*3 + j*nx*3];
-            }
-            
-            SUM(j + 1, i + 1) += SUM(j, i + 1) + SUM(j + 1, i) - SUM(j, i);
+            std::cout << "[ ";
+            for (int c = 0; c < 3; c++)
+                std::cout << data[c + i*3 + j*nx*3] << " ";
+            std::cout << "]";
         }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-        for (int i = nx; i < na+nd-1; i++) {
-            SUM(j + 1, i + 1) = double4_t {nan(""), nan(""), nan(""), 0};
+    for (int j = 0; j <= ny; j++) {
+        for (int ib = 0; ib < nb; ib++) {
+            std::cout << "{ ";
+            for (int id = 0; id < nd; id++) {
+                std::cout << "[ ";
+                for(int c = 0; c < 3; c++) {
+                    std::cout << sum[c + ib*3 + j*nb*3][id] << " ";
+                }
+                std::cout << "]";
+            }
+            std::cout << " }";
+        }
+        std::cout << std::endl;
+    }
+}
+
+static inline double4_t swap1(double4_t x) { return _mm256_permute_pd(x, 5); }
+static inline double4_t swap2(double4_t x) { return _mm256_permute2f128_pd(x, x, 1); }
+
+Result segment(int ny, int nx, const float* data) {
+    constexpr int nd = 4;
+    int nb = ((nx + 1) + nd - 1) / nd;
+
+    double4_t* sum = double4_alloc((ny+1) * nb * 3);
+
+    for (int ib = 0; ib <= nb; ib++) {
+        for (int c = 0; c < 3; c++) {
+            sum[c + ib*3] = double4_0;
         }
     }
 
-    double best = 0;
+    for (int j = 1; j <= ny; j++) {
+        sum[0 + j*nb*3][0] = sum[1 + j*nb*3][0] = sum[2 + j*nb*3][0] = 0;
+
+        for (int ib = 0; ib < nb; ib++) {
+            for (int id = (ib==0); id < nd; id++) {
+                int i = ib*nd+id;
+                for (int c = 0; c < 3; c++) {
+                    double &t = sum[c + ib*3 + j*nb*3][id];
+                    t = sum[c + ib*3 + (j-1)*nb*3][id];
+                    if (id > 0) {
+                        t += sum[c + ib*3 + j*nb*3][id-1] - sum[c + ib*3 + (j-1)*nb*3][id-1];
+                    }
+                    else {
+                        t += sum[c + (ib-1)*3 + j*nb*3][nd-1] - sum[c + (ib-1)*3 + (j-1)*nb*3][nd-1];
+                    }
+
+                    if (i > 0) {
+                        if (i-1 < nx)
+                            t += data[c + (i-1)*3 + (j-1)*nx*3];
+                        else
+                            t = nan("");
+                    }
+                }
+            }
+        }
+    }
+
+    double best = {};
     Result res = {};
-    double4_t sumall = SUM(ny, nx);
+    double sumall[3];
+    for (int c = 0; c < 3; c++) {
+        sumall[c] = sum[c + nx/nd*3 + ny*nb*3][nx%nd];
+    }
 
     #pragma omp parallel
     {
-        double my_best[nd] = {};
-        Result my_res[nd];
+        double my_best = 0;
+        Result my_res;
 
         #pragma omp for schedule(static, 1) nowait
         for (int ly = 1; ly <= ny; ly++) {
-            for (int lxb = 0; lxb < nb; lxb++) {
-                double area1[nd], area2[nd], areac[nd];
+            for (int lxb = 0; lxb <= nb; lxb++) {
+                for (int j = 0; j <= ny-ly; j++) {
+                    double4_t areac[nd] = {}, area2[nd] = {};
 
-                for (int lxd = 1; lxd <= nd; lxd++) {
-                    int lx = lxb*nd + lxd;
-                    area1[lxd-1] = 1.0 / (ly*lx);
-                    area2[lxd-1] = 1.0 / (ny*nx - ly*lx);
-                    areac[lxd-1] = area1[lxd-1] + area2[lxd-1];
-                }
+                    for (int id1 = 0; id1 < nd; id1++) {
+                        for (int k = 0; k < nd; k++) {
+                            int id2 = id1 ^ k;
+                            double area1 = 1.0 / ((lxb*nd + id2 - id1) * ly);
+                            area2[k][id1] = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
+                            areac[k][id1] = area1 + area2[k][id1];
+                        }
+                    }
 
-                for (int j = 0; j < ny-ly+1; j++) {
+
                     for (int ib = 0; ib < nb-lxb; ib++) {
+                        double4_t t[3][4];
+                        double4_t val[4] = {};
 
-                        for (int lxd = 1; lxd <= nd; lxd++)
-                            for (int id = 0; id < nd; id++) {
-                                int lx = lxd + lxb*nd;
-                                int i = id + ib*nd;
+                        for (int c = 0; c < 3; c++) {
+                            double4_t a00 = sum[c + ib*3 + j*nb*3];
+                            double4_t b00 = sum[c + (ib+lxb)*3 + j*nb*3];
+                            double4_t c00 = sum[c + ib*3 + (j+ly)*nb*3];
+                            double4_t d00 = sum[c + (ib+lxb)*3 + (j+ly)*nb*3];
 
-                                double4_t t = SUM4(j, i, ly, lx);
+                            double4_t b10 = swap2(b00);
+                            double4_t b01 = swap1(b00);
+                            double4_t b11 = swap1(b10);
+                            
+                            double4_t d10 = swap2(d00);
+                            double4_t d01 = swap1(d00);
+                            double4_t d11 = swap1(d10);
 
-                                t = t * t * areac[lxd-1] + sumall * area2[lxd-1] * (sumall  - 2 * t);
+                            t[c][0] = d00 - b00 - c00 + a00;
+                            val[0] += t[c][0] * t[c][0] * areac[0] + sumall[c] * area2[0] * (sumall[c] - 2*t[c][0]);
 
-                                double val = t[0] + t[1] + t[2];
+                            t[c][1] = d01 - b01 - c00 + a00;
+                            val[1] += t[c][1] * t[c][1] * areac[1] + sumall[c] * area2[1] * (sumall[c] - 2*t[c][1]);
+                            
+                            t[c][2] = d10 - b10 - c00 + a00;
+                            val[2] += t[c][2] * t[c][2] * areac[2] + sumall[c] * area2[2] * (sumall[c] - 2*t[c][2]);
+                            
+                            t[c][3] = d11 - b11 - c00 + a00;
+                            val[3] += t[c][3] * t[c][3] * areac[3] + sumall[c] * area2[3] * (sumall[c] - 2*t[c][3]);
+                        }
 
-                                if (val > my_best[id]) {
-                                    my_best[id] = val;
-                                    my_res[id].y0 = j;
-                                    my_res[id].y1 = j + ly;
-                                    my_res[id].x0 = i;
-                                    my_res[id].x1 = i + lx;
+                        for (int id1 = 0; id1 < nd; id1++) {
+                            for (int k = 0; k < nd; k++) {
+                                int id2 = id1 ^ k;
+                                if (val[k][id1] > my_best) {
+                                    my_best = val[k][id1];
+                                    my_res.y0 = j;
+                                    my_res.y1 = j + ly;
+                                    my_res.x0 = id1 + ib*nd;
+                                    my_res.x1 = id2 + (ib+lxb)*nd;
                                 }
-
                             }
+                        }
+
+
                     }
                 }
-
             }
         }
 
         #pragma omp critical
         {
-            for (int i = 0; i < nd; i++) {
-                if (my_best[i] > best) {
-                    best = my_best[i];
-                    res = my_res[i];
-                }
+            if (my_best > best) {
+                best = my_best;
+                res = my_res;
             }
         }
     }
 
-    double4_t innersum = SUM4(res.y0, res.x0, res.y1 - res.y0, res.x1 - res.x0);
     double innerarea = (res.y1 - res.y0) * (res.x1 - res.x0);
-    
-    double4_t inner = innersum / innerarea;
-    double4_t outer = (SUM(ny, nx) - innersum) / (ny*nx - innerarea);
 
     for (int c = 0; c < 3; c++) {
-        res.inner[c] = inner[c];
-        res.outer[c] = outer[c];
+        double innersum = + sum[c + res.x1/nd*3 + res.y1*nb*3][res.x1%nd]
+                       - sum[c + res.x0/nd*3 + res.y1*nb*3][res.x0%nd]
+                       - sum[c + res.x1/nd*3 + res.y0*nb*3][res.x1%nd]
+                       + sum[c + res.x0/nd*3 + res.y0*nb*3][res.x0%nd];
+        
+        res.inner[c] = innersum / innerarea;
+        res.outer[c] = (sumall[c] - innersum) / (ny*nx - innerarea);
     }
 
     free(sum);
