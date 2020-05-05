@@ -8,7 +8,7 @@
 
 //#define DBG(x) std::cout << #x << " = " << x << std::endl;
 #define DBG(x) {}
-
+/*
 static void printall(int ny, int nx, int nb, int nd, const float* data, const double4_t* sum) {
     std::cout << std::fixed << std::setprecision(2);
     std::cout << std::endl;
@@ -37,7 +37,7 @@ static void printall(int ny, int nx, int nb, int nd, const float* data, const do
         }
         std::cout << std::endl;
     }
-}
+}*/
 
 static inline double4_t swap1(double4_t x) { return _mm256_permute_pd(x, 5); }
 static inline double4_t swap2(double4_t x) { return _mm256_permute2f128_pd(x, x, 1); }
@@ -97,14 +97,18 @@ Result segment(int ny, int nx, const float* data) {
         for (int ly = 1; ly <= ny; ly++) {
             for (int lxb = 0; lxb <= nb; lxb++) {
                 for (int j = 0; j <= ny-ly; j++) {
-                    double4_t areac[nd] = {}, area2[nd] = {};
+                    double4_t areac[nd] = {}, temp[3][nd] = {};
 
-                    for (int id1 = 0; id1 < nd; id1++) {
-                        for (int k = 0; k < nd; k++) {
+                    for (int k = 0; k < nd; k++) {
+                        for (int id1 = 0; id1 < nd; id1++) {
                             int id2 = id1 ^ k;
                             double area1 = 1.0 / ((lxb*nd + id2 - id1) * ly);
-                            area2[k][id1] = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
-                            areac[k][id1] = area1 + area2[k][id1];
+                            double area2 = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
+                            areac[k][id1] = area1 + area2;
+
+                            temp[0][k][id1] = area2 * sumall[0];
+                            temp[1][k][id1] = area2 * sumall[1];
+                            temp[2][k][id1] = area2 * sumall[2];
                         }
                     }
 
@@ -120,24 +124,25 @@ Result segment(int ny, int nx, const float* data) {
                             double4_t ac = a00 - c00;
 
                             double4_t b10 = swap2(b00);
-                            double4_t b01 = swap1(b00);
-                            double4_t b11 = swap1(b10);
-                            
                             double4_t d10 = swap2(d00);
+                            
+                            double4_t b01 = swap1(b00);
                             double4_t d01 = swap1(d00);
+                            
+                            double4_t b11 = swap1(b10);
                             double4_t d11 = swap1(d10);
 
                             double4_t t0 = d00 - b00 + ac;
-                            val[0] += t0 * t0 * areac[0] + sumall[c] * area2[0] * (sumall[c] - 2*t0);
+                            val[0] += t0 * (t0 * areac[0] - 2*temp[c][0]) + temp[c][0] * sumall[c];
 
                             double4_t t1 = d01 - b01 + ac;
-                            val[1] += t1 * t1 * areac[1] + sumall[c] * area2[1] * (sumall[c] - 2*t1);
+                            val[1] += t1 * (t1 * areac[1] - 2*temp[c][1]) + temp[c][1] * sumall[c];
                             
                             double4_t t2 = d10 - b10 + ac;
-                            val[2] += t2 * t2 * areac[2] + sumall[c] * area2[2] * (sumall[c] - 2*t2);
+                            val[2] += t2 * (t2 * areac[2] - 2*temp[c][2]) + temp[c][2] * sumall[c];
                             
                             double4_t t3 = d11 - b11 + ac;
-                            val[3] += t3 * t3 * areac[3] + sumall[c] * area2[3] * (sumall[c] - 2*t3);
+                            val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) + temp[c][3] * sumall[c];
                         }
 
                         for (int k = 0; k < nd; k++) {
