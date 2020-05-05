@@ -95,8 +95,8 @@ Result segment(int ny, int nx, const float* data) {
 
         #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
-            for (int lxb = 0; lxb <= nb; lxb++) {
-                for (int j = 0; j <= ny-ly; j++) {
+            for (int j = 0; j <= ny-ly; j++) {
+                for (int lxb = 0; lxb <= nb; lxb++) {
                     double4_t areac[nd] = {}, temp[3][nd] = {};
 
                     for (int k = 0; k < nd; k++) {
