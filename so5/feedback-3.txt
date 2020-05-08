@@ -1,0 +1,10 @@
+0
+
+Is it really necessary here to use nested parallelism?
+
+What about just using one "parallel" section in the "psort" function,
+create 8 threads there, and then e.g. use tasks in the recursive part?
+
+--
+Grading by:
+jukka
