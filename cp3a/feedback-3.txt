@@ -1,0 +1,14 @@
+0
+
+Nice!
+
+I wonder if data could be organized differently in memory?
+So that elements of e.g. row 0 and row 1 would be "interleaved",
+so that the innermost loop would basically read just
+2 consecutive blocks of memory instead of 4?
+Then I think it might be enough to do 2 prefetches instead of 4?
+One cache line would contain already 2 vectors.
+
+--
+Grading by:
+jukka
