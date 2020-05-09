@@ -11,6 +11,7 @@ static inline double4_t swap2(double4_t x) { return _mm256_permute2f128_pd(x, x,
 void correlate(int ny, int nx, const float* data, float* result) {
     constexpr int nb = 4; 
     constexpr int nd = 2;
+    constexpr int PF = 15;
 
     int na = ((ny + nb - 1) / nb + nd - 1) / nd * nd;
     int nc = na / nd;
@@ -39,12 +40,12 @@ void correlate(int ny, int nx, const float* data, float* result) {
                 std = sqrt(std);
 
                 for (int i = 0; i < nx; i++) {
-                    normal[i + ja*nx][jb] = (data[i + j*nx] - mean) / std;
+                    normal[ja%2 + i*2 + ja/2*nx*2][jb] = (data[i + j*nx] - mean) / std;
                 }
             }
             else {
                 for (int i = 0; i < nx; i++) {
-                    normal[i + ja*nx][jb] = 0;
+                    normal[ja%2 + i*2 + ja/2*nx*2][jb] = 0;
                 }
             }
         }
@@ -78,20 +79,17 @@ void correlate(int ny, int nx, const float* data, float* result) {
             double4_t t[nd][nd][nb] = {};
 
             for (int k = 0; k < nx/3; k++) {
-                constexpr int PF = 9;
-                __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 1)*nx + PF]);
+                __builtin_prefetch(&normal[k*2 + ja*nx*2 + PF]);
+                __builtin_prefetch(&normal[k*2 + ia*nx*2 + PF]);
 
                 for (int jd = 0; jd < nd; jd++) {
-                    double4_t b00 = normal[k + (ja*nd + jd)*nx];
+                    double4_t b00 = normal[jd + k*2 + ja*nx*2];
                     double4_t b10 = swap2(b00);
                     double4_t b01 = swap1(b00);
                     double4_t b11 = swap1(b10);
 
                     for (int id = 0; id < nd; id++) {
-                        double4_t a00 = normal[k + (ia*nd + id)*nx];
+                        double4_t a00 = normal[id + k*2 + ia*nx*2];
 
                         t[jd][id][0] += a00 * b00;
                         t[jd][id][1] += a00 * b01;
@@ -131,20 +129,17 @@ void correlate(int ny, int nx, const float* data, float* result) {
             double4_t t[nd][nd][nb] = {};
 
             for (int k = nx/3; k < nx/3*2; k++) {
-                constexpr int PF = 9;
-                __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 1)*nx + PF]);
+                __builtin_prefetch(&normal[k*2 + ja*nx*2 + PF]);
+                __builtin_prefetch(&normal[k*2 + ia*nx*2 + PF]);
 
                 for (int jd = 0; jd < nd; jd++) {
-                    double4_t b00 = normal[k + (ja*nd + jd)*nx];
+                    double4_t b00 = normal[jd + k*2 + ja*nx*2];
                     double4_t b10 = swap2(b00);
                     double4_t b01 = swap1(b00);
                     double4_t b11 = swap1(b10);
 
                     for (int id = 0; id < nd; id++) {
-                        double4_t a00 = normal[k + (ia*nd + id)*nx];
+                        double4_t a00 = normal[id + k*2 + ia*nx*2];
 
                         t[jd][id][0] += a00 * b00;
                         t[jd][id][1] += a00 * b01;
@@ -184,20 +179,17 @@ void correlate(int ny, int nx, const float* data, float* result) {
             double4_t t[nd][nd][nb] = {};
 
             for (int k = nx/3*2; k < nx; k++) {
-                constexpr int PF = 9;
-                __builtin_prefetch(&normal[k + (ja*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ja*nd + 1)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 0)*nx + PF]);
-                __builtin_prefetch(&normal[k + (ia*nd + 1)*nx + PF]);
+                __builtin_prefetch(&normal[k*2 + ja*nx*2 + PF]);
+                __builtin_prefetch(&normal[k*2 + ia*nx*2 + PF]);
 
                 for (int jd = 0; jd < nd; jd++) {
-                    double4_t b00 = normal[k + (ja*nd + jd)*nx];
+                    double4_t b00 = normal[jd + k*2 + ja*nx*2];
                     double4_t b10 = swap2(b00);
                     double4_t b01 = swap1(b00);
                     double4_t b11 = swap1(b10);
 
                     for (int id = 0; id < nd; id++) {
-                        double4_t a00 = normal[k + (ia*nd + id)*nx];
+                        double4_t a00 = normal[id + k*2 + ia*nx*2];
 
                         t[jd][id][0] += a00 * b00;
                         t[jd][id][1] += a00 * b01;
@@ -222,7 +214,6 @@ void correlate(int ny, int nx, const float* data, float* result) {
             }
 
         }
-
 
     free(normal);
     delete[] db_res;
