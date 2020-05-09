@@ -1,7 +1,5 @@
 #include "is.h"
 #include <omp.h>
-#include <iostream>
-#include <iomanip>
 #include <cmath>
 #include "vector.h"
 #include <x86intrin.h>
@@ -63,6 +61,7 @@ Result segment(int ny, int nx, const float* data) {
                 for (int c = 0; c < 3; c++) {
                     double &t = sum[c + ib*3 + j*nb*3][id];
                     t = sum[c + ib*3 + (j-1)*nb*3][id];
+
                     if (id > 0) {
                         t += sum[c + ib*3 + j*nb*3][id-1] - sum[c + ib*3 + (j-1)*nb*3][id-1];
                     }
@@ -117,28 +116,27 @@ Result segment(int ny, int nx, const float* data) {
                         double4_t val[4] = {};
                         
                         for (int c = 0; c < 3; c++) {
-                            double4_t a00 = sum[c + ib*3 + j*nb*3];
                             double4_t b00 = sum[c + (ib+lxb)*3 + j*nb*3];
-                            double4_t c00 = sum[c + ib*3 + (j+ly)*nb*3];
                             double4_t d00 = sum[c + (ib+lxb)*3 + (j+ly)*nb*3];
-                            double4_t ac = a00 - c00;
+                            
                             double4_t db00 = d00 - b00;
-
-                            double4_t db10 = swap2(db00);
                             
-                            double4_t db01 = swap1(db00);
-                            
-                            double4_t db11 = swap1(db10);
+                            double4_t a00 = sum[c + ib*3 + j*nb*3];
+                            double4_t c00 = sum[c + ib*3 + (j+ly)*nb*3];
+                            double4_t ac = a00 - c00;
 
                             double4_t t0 = db00 + ac;
                             val[0] += t0 * (t0 * areac[0] - 2*temp[c][0]) + temp[c][0] * sumall[c];
 
+                            double4_t db01 = swap1(db00);
                             double4_t t1 = db01 + ac;
                             val[1] += t1 * (t1 * areac[1] - 2*temp[c][1]) + temp[c][1] * sumall[c];
                             
+                            double4_t db10 = swap2(db00);
                             double4_t t2 = db10 + ac;
                             val[2] += t2 * (t2 * areac[2] - 2*temp[c][2]) + temp[c][2] * sumall[c];
                             
+                            double4_t db11 = swap2(db01);
                             double4_t t3 = db11 + ac;
                             val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) + temp[c][3] * sumall[c];
                         }
