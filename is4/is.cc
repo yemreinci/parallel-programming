@@ -40,6 +40,10 @@ static void printall(int ny, int nx, int nb, int nd, const float* data, const do
 static inline double4_t swap1(double4_t x) { return _mm256_permute_pd(x, 5); }
 static inline double4_t swap2(double4_t x) { return _mm256_permute2f128_pd(x, x, 1); }
 
+typedef struct InterResult {
+    int lxb, j, ly;
+} InterResult;
+
 Result segment(int ny, int nx, const float* data) {
     constexpr int nd = 4;
     int nb = ((nx + 1) + nd - 1) / nd;
@@ -89,8 +93,12 @@ Result segment(int ny, int nx, const float* data) {
 
     #pragma omp parallel
     {
-        double my_best[4] = {};
-        Result my_res[4];
+        double my_best = 0;
+        InterResult my_ires = {};
+        Result my_res;
+
+        // To avoid repeatedly updating my_res in the innermost loop, first just find in which loop the best 
+        // value exist, then we find the exact position of the best result.
 
         #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
@@ -111,6 +119,7 @@ Result segment(int ny, int nx, const float* data) {
                         }
                     }
 
+                    double4_t best_in_loop[2] = {};
 
                     for (int ib = 0; ib < nb-lxb; ib++) {
                         double4_t val[4] = {};
@@ -141,17 +150,85 @@ Result segment(int ny, int nx, const float* data) {
                             val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) + temp[c][3] * sumall[c];
                         }
 
-                        for (int k = 0; k < nd; k++) {
-                            for (int id1 = 0; id1 < nd; id1++) {
-                                int id2 = id1 ^ k;
-                                if (val[k][id1] > my_best[id1]) {
-                                    my_best[id1] = val[k][id1];
-                                    my_res[id1].y0 = j;
-                                    my_res[id1].y1 = j + ly;
-                                    my_res[id1].x0 = id1 + ib*nd;
-                                    my_res[id1].x1 = id2 + (ib+lxb)*nd;
-                                }
-                            }
+                        best_in_loop[0] = _mm256_max_pd(val[0], best_in_loop[0]);
+                        best_in_loop[1] = _mm256_max_pd(val[1], best_in_loop[1]);
+                        best_in_loop[0] = _mm256_max_pd(val[2], best_in_loop[0]);
+                        best_in_loop[1] = _mm256_max_pd(val[3], best_in_loop[1]);
+                    }
+
+                    for (int k = 0; k < 2; k++) {
+                        for(int i = 0; i < 4; i++)
+                        if (best_in_loop[k][i] > my_best) {
+                            my_best = best_in_loop[k][i];
+                            my_ires.j = j;
+                            my_ires.ly = ly;
+                            my_ires.lxb = lxb;
+                        }
+                    }
+                }
+            }
+        }
+
+        // similar to the innermost loop above, but this one also updates my_res
+        {
+            int lxb = my_ires.lxb;
+            int j = my_ires.j;
+            int ly = my_ires.ly;
+            my_best = 0;
+                    
+            double4_t areac[nd] = {}, temp[3][nd] = {};
+
+            for (int k = 0; k < nd; k++) {
+                for (int id1 = 0; id1 < nd; id1++) {
+                    int id2 = id1 ^ k;
+                    double area1 = 1.0 / ((lxb*nd + id2 - id1) * ly);
+                    double area2 = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
+                    areac[k][id1] = area1 + area2;
+
+                    temp[0][k][id1] = area2 * sumall[0];
+                    temp[1][k][id1] = area2 * sumall[1];
+                    temp[2][k][id1] = area2 * sumall[2];
+                }
+            }
+
+            for (int ib = 0; ib < nb-lxb; ib++) {
+                double4_t val[4] = {};
+                
+                for (int c = 0; c < 3; c++) {
+                    double4_t b00 = sum[c + (ib+lxb)*3 + j*nb*3];
+                    double4_t d00 = sum[c + (ib+lxb)*3 + (j+ly)*nb*3];
+                    
+                    double4_t db00 = d00 - b00;
+                    
+                    double4_t a00 = sum[c + ib*3 + j*nb*3];
+                    double4_t c00 = sum[c + ib*3 + (j+ly)*nb*3];
+                    double4_t ac = a00 - c00;
+
+                    double4_t t0 = db00 + ac;
+                    val[0] += t0 * (t0 * areac[0] - 2*temp[c][0]) + temp[c][0] * sumall[c];
+
+                    double4_t db01 = swap1(db00);
+                    double4_t t1 = db01 + ac;
+                    val[1] += t1 * (t1 * areac[1] - 2*temp[c][1]) + temp[c][1] * sumall[c];
+                    
+                    double4_t db10 = swap2(db00);
+                    double4_t t2 = db10 + ac;
+                    val[2] += t2 * (t2 * areac[2] - 2*temp[c][2]) + temp[c][2] * sumall[c];
+                    
+                    double4_t db11 = swap2(db01);
+                    double4_t t3 = db11 + ac;
+                    val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) + temp[c][3] * sumall[c];
+                }
+                
+                for (int k = 0; k < nd; k++) {
+                    for (int id1 = 0; id1 < nd; id1++) {
+                        int id2 = id1 ^ k;
+                        if (val[k][id1] > my_best) {
+                            my_best = val[k][id1];
+                            my_res.y0 = j;
+                            my_res.y1 = j + ly;
+                            my_res.x0 = id1 + ib*nd;
+                            my_res.x1 = id2 + (ib+lxb)*nd;
                         }
                     }
                 }
@@ -160,11 +237,9 @@ Result segment(int ny, int nx, const float* data) {
 
         #pragma omp critical
         {
-            for (int i = 0; i < nd; i++) {
-                if (my_best[i] > best) {
-                    best = my_best[i];
-                    res = my_res[i];
-                }
+            if (my_best > best) {
+                best = my_best;
+                res = my_res;
             }
         }
     }
