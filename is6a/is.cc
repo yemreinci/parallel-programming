@@ -99,7 +99,7 @@ Result segment(int ny, int nx, const float* data) {
         #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
             for (int lxb = 0; lxb <= nb; lxb++) {
-                float8_t areac[nd] = {}, temp[nd] = {};
+                float8_t areac[nd] = {}, temp[nd] = {}, pro[nd];
 
                 for (int k = 0; k < nd; k++) {
                     for (int id1 = 0; id1 < nd; id1++) {
@@ -109,6 +109,8 @@ Result segment(int ny, int nx, const float* data) {
                         areac[k][id1] = area1 + area2;
                         temp[k][id1] = area2 * sumall;
                     }
+                    pro[k] = temp[k] * sumall;
+                    temp[k] = 2*temp[k];
                 }
                 
                 for (int j = 0; j <= ny-ly; j++) {
@@ -124,42 +126,42 @@ Result segment(int ny, int nx, const float* data) {
                         float8_t ac = sum[ib + j*nb] - sum[ib + (j+ly)*nb];
 
                         float8_t t0 = db000 + ac;
-                        val[0] = t0 * (t0 * areac[0] - 2*temp[0]) + temp[0] * sumall;
+                        val[0] = t0 * (t0 * areac[0] - temp[0]) + pro[0];
                         best_in_loop[0] = _mm256_max_ps(val[0], best_in_loop[0]);
 
                         float8_t db001 = swap1(db000);
                         float8_t t1 = db001 + ac;
-                        val[1] = t1 * (t1 * areac[1] - 2*temp[1]) + temp[1] * sumall;
+                        val[1] = t1 * (t1 * areac[1] - temp[1]) + pro[1];
                         best_in_loop[1] = _mm256_max_ps(val[1], best_in_loop[1]);
                         
                         float8_t db010 = swap2(db000);
                         float8_t t2 = db010 + ac;
-                        val[2] = t2 * (t2 * areac[2] - 2*temp[2]) + temp[2] * sumall;
+                        val[2] = t2 * (t2 * areac[2] - temp[2]) + pro[2];
                         best_in_loop[0] = _mm256_max_ps(val[2], best_in_loop[0]);
                         
                         float8_t db011 = swap2(db001);
                         float8_t t3 = db011 + ac;
-                        val[3] = t3 * (t3 * areac[3] - 2*temp[3]) + temp[3] * sumall;
+                        val[3] = t3 * (t3 * areac[3] - temp[3]) + pro[3];
                         best_in_loop[1] = _mm256_max_ps(val[3], best_in_loop[1]);
                         
                         float8_t db100 = swap4(db000);
                         float8_t t4 = db100 + ac;
-                        val[4] = t4 * (t4 * areac[4] - 2*temp[4]) + temp[4] * sumall;
+                        val[4] = t4 * (t4 * areac[4] - temp[4]) + pro[4];
                         best_in_loop[0] = _mm256_max_ps(val[4], best_in_loop[0]);
 
                         float8_t db101 = swap4(db001);
                         float8_t t5 = db101 + ac;
-                        val[5] = t5 * (t5 * areac[5] - 2*temp[5]) + temp[5] * sumall;
+                        val[5] = t5 * (t5 * areac[5] - temp[5]) + pro[5];
                         best_in_loop[1] = _mm256_max_ps(val[5], best_in_loop[1]);
                         
                         float8_t db110 = swap4(db010);
                         float8_t t6 = db110 + ac;
-                        val[6] = t6 * (t6 * areac[6] - 2*temp[6]) + temp[6] * sumall;
+                        val[6] = t6 * (t6 * areac[6] - temp[6]) + pro[6];
                         best_in_loop[0] = _mm256_max_ps(val[6], best_in_loop[0]);
                         
                         float8_t db111 = swap4(db011);
                         float8_t t7 = db111 + ac;
-                        val[7] = t7 * (t7 * areac[7] - 2*temp[7]) + temp[7] * sumall;
+                        val[7] = t7 * (t7 * areac[7] - temp[7]) + pro[7];
                         best_in_loop[1] = _mm256_max_ps(val[7], best_in_loop[1]);
                     
                     }

@@ -103,7 +103,7 @@ Result segment(int ny, int nx, const float* data) {
         #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
             for (int lxb = 0; lxb <= nb; lxb++) {
-                double4_t areac[nd] = {}, temp[3][nd] = {};
+                double4_t areac[nd] = {}, temp[3][nd] = {}, pro[nd] = {};
 
                 for (int k = 0; k < nd; k++) {
                     for (int id1 = 0; id1 < nd; id1++) {
@@ -116,6 +116,8 @@ Result segment(int ny, int nx, const float* data) {
                         temp[1][k][id1] = area2 * sumall[1];
                         temp[2][k][id1] = area2 * sumall[2];
                     }
+                    
+                    pro[k] = temp[0][k] * sumall[0] + temp[1][k] * sumall[1] + temp[2][k] * sumall[2];
                 }
                 
                 for (int j = 0; j <= ny-ly; j++) {
@@ -123,7 +125,7 @@ Result segment(int ny, int nx, const float* data) {
                     double4_t best_in_loop[2] = {};
 
                     for (int ib = 0; ib < nb-lxb; ib++) {
-                        double4_t val[4] = {};
+                        double4_t val[4] = { pro[0], pro[1], pro[2], pro[3] };
                         
                         for (int c = 0; c < 3; c++) {
                             double4_t b00 = sum[c + (ib+lxb)*3 + j*nb*3];
@@ -136,19 +138,19 @@ Result segment(int ny, int nx, const float* data) {
                             double4_t ac = a00 - c00;
 
                             double4_t t0 = db00 + ac;
-                            val[0] += t0 * (t0 * areac[0] - 2*temp[c][0]) + temp[c][0] * sumall[c];
+                            val[0] += t0 * (t0 * areac[0] - 2*temp[c][0]) ;
 
                             double4_t db01 = swap1(db00);
                             double4_t t1 = db01 + ac;
-                            val[1] += t1 * (t1 * areac[1] - 2*temp[c][1]) + temp[c][1] * sumall[c];
+                            val[1] += t1 * (t1 * areac[1] - 2*temp[c][1]) ;
                             
                             double4_t db10 = swap2(db00);
                             double4_t t2 = db10 + ac;
-                            val[2] += t2 * (t2 * areac[2] - 2*temp[c][2]) + temp[c][2] * sumall[c];
+                            val[2] += t2 * (t2 * areac[2] - 2*temp[c][2]) ;
                             
                             double4_t db11 = swap2(db01);
                             double4_t t3 = db11 + ac;
-                            val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) + temp[c][3] * sumall[c];
+                            val[3] += t3 * (t3 * areac[3] - 2*temp[c][3]) ;
                         }
 
                         best_in_loop[0] = _mm256_max_pd(val[0], best_in_loop[0]);
