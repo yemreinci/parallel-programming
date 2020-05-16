@@ -102,22 +102,23 @@ Result segment(int ny, int nx, const float* data) {
 
         #pragma omp for schedule(static, 1) 
         for (int ly = 1; ly <= ny; ly++) {
-            for (int j = 0; j <= ny-ly; j++) {
-                for (int lxb = 0; lxb <= nb; lxb++) {
-                    double4_t areac[nd] = {}, temp[3][nd] = {};
+            for (int lxb = 0; lxb <= nb; lxb++) {
+                double4_t areac[nd] = {}, temp[3][nd] = {};
 
-                    for (int k = 0; k < nd; k++) {
-                        for (int id1 = 0; id1 < nd; id1++) {
-                            int id2 = id1 ^ k;
-                            double area1 = 1.0 / ((lxb*nd + id2 - id1) * ly);
-                            double area2 = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
-                            areac[k][id1] = area1 + area2;
+                for (int k = 0; k < nd; k++) {
+                    for (int id1 = 0; id1 < nd; id1++) {
+                        int id2 = id1 ^ k;
+                        double area1 = 1.0 / ((lxb*nd + id2 - id1) * ly);
+                        double area2 = 1.0 / (ny*nx - (lxb*nd + id2 - id1) * ly);
+                        areac[k][id1] = area1 + area2;
 
-                            temp[0][k][id1] = area2 * sumall[0];
-                            temp[1][k][id1] = area2 * sumall[1];
-                            temp[2][k][id1] = area2 * sumall[2];
-                        }
+                        temp[0][k][id1] = area2 * sumall[0];
+                        temp[1][k][id1] = area2 * sumall[1];
+                        temp[2][k][id1] = area2 * sumall[2];
                     }
+                }
+                
+                for (int j = 0; j <= ny-ly; j++) {
 
                     double4_t best_in_loop[2] = {};
 
