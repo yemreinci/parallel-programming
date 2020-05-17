@@ -55,7 +55,7 @@ Result segment(int ny, int nx, const float* data) {
 
     float8_t* sum = float8_alloc((ny+1) * nb);
 
-    for (int ib = 0; ib <= nb; ib++) {
+    for (int ib = 0; ib < nb; ib++) {
         sum[ib] = float8_0;
     }
 
