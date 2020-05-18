@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cmath>
 #include "nn.h"
+#include "timer.h"
 
 // ------------------------------------------------------------------------
 
@@ -43,24 +44,56 @@ static void evalConv(int idx, const float* bufIn, float* bufOut)
 
     printf("conv %-2d (%3d, %3d, %3d) -> (%3d, %3d, %3d)\n", idx, layer.nIn, layer.sz, layer.sz, layer.nOut, layer.sz, layer.sz);
     fflush(stdout);
+    
+    const int sz = layer.sz;
+    const int padSz = sz + 2;
 
-    int sz = layer.sz;
-    for (int i = 0; i < layer.nOut; i++)
-    for (int y = 0; y < sz; y++)
-    for (int x = 0; x < sz; x++)
-    {
-        float sum = B[i];
-        for (int j = 0; j < layer.nIn; j++)
-        for (int dy = 0; dy < 3; dy++)
-        for (int dx = 0; dx < 3; dx++)
-        {
-            int yy = y + dy - 1;
-            int xx = x + dx - 1;
-            if (yy >= 0 && yy < sz && xx >= 0 && xx < sz)
-                sum += bufIn[sz*sz*j + sz*yy + xx] * W[layer.nIn*3*3*i + 3*3*j + 3*(2-dy) + (2-dx)];
+    float *paddedIn = new float[layer.nIn * padSz * padSz];
+
+    #pragma omp parallel for schedule(static, 1)
+    for (int c = 0; c < layer.nIn; c++) {
+        for (int x = 0; x < padSz; x++) {
+            paddedIn[padSz*layer.nIn*0 + layer.nIn*x + c] = 0;
+            paddedIn[padSz*layer.nIn*(padSz-1) + layer.nIn*x + c] = 0;
         }
-        bufOut[sz*sz*i + sz*y + x] = (sum > 0.f) ? sum : 0.f; // ReLu activation.
+
+        for (int y = 0; y < sz; y++) {
+            paddedIn[padSz*layer.nIn*(y+1) + layer.nIn*0 + c] = 0;
+            paddedIn[padSz*layer.nIn*(y+1) + layer.nIn*(padSz-1) + c] = 0;
+            for (int x = 0; x < sz; x++) {
+                paddedIn[padSz*layer.nIn*(y+1) + layer.nIn*(x+1) + c] = bufIn[sz*sz*c + sz*y + x];
+            }
+        }
     }
+
+    #pragma omp parallel for schedule(static, 1)
+    for (int i = 0; i < layer.nOut; i++) {
+        for (int y = 0; y < sz; y++) 
+        for (int x = 0; x < sz; x++)
+        {
+            float sum[3][3] = {B[i]};
+
+            for (int j = 0; j < layer.nIn; j++)
+                for (int dy = 0; dy < 3; dy++)
+                    for (int dx = 0; dx < 3; dx++)
+                    {
+                        int yy = y + dy - 1;
+                        int xx = x + dx - 1;
+                        float weight = W[layer.nIn*3*3*i + 3*3*j + 3*(2-dy) + (2-dx)];
+                        float pix = paddedIn[padSz*layer.nIn*(yy+1) + layer.nIn*(xx+1) + j];
+                        sum[dy][dx] += weight * pix; 
+                    }
+
+            sum[0][0] += sum[0][1] + sum[0][2];
+            sum[1][0] += sum[1][1] + sum[1][2];
+            sum[2][0] += sum[2][1] + sum[2][2];
+            sum[0][0] += sum[1][0] + sum[2][0];
+
+            bufOut[sz*sz*i + sz*y + x] = (sum[0][0] > 0.f) ? sum[0][0] : 0.f; // ReLu activation.
+        }
+    }
+
+    delete[] paddedIn;
 }
 
 // ------------------------------------------------------------------------
@@ -75,6 +108,7 @@ static void evalDense(int idx, const float* bufIn, float* bufOut)
     printf("dense %d (%3d) -> (%3d)\n", idx, layer.nIn, layer.nOut);
     fflush(stdout);
 
+    #pragma omp parallel for schedule(static, 1)
     for (int i = 0; i < layer.nOut; i++)
     {
         float sum = B[i];
@@ -82,14 +116,17 @@ static void evalDense(int idx, const float* bufIn, float* bufOut)
             sum += bufIn[j] * W[layer.nIn*i + j];
 
         if (layer.softmax)
-            total += (bufOut[i] = expf(sum));
+            bufOut[i] = expf(sum);
         else
             bufOut[i] = (sum > 0.f) ? sum : 0.f;
     }
 
-    if (layer.softmax)
+    if (layer.softmax) {
+        for (int i = 0; i < layer.nOut; i++)
+            total += bufOut[i];
         for (int i = 0; i < layer.nOut; i++)
             bufOut[i] *= 1.f / total;
+    }
 }
 
 // ------------------------------------------------------------------------
@@ -101,6 +138,8 @@ static void maxPool2x2(int sz, int n, const float* bufIn, float* bufOut)
     fflush(stdout);
 
     int h = sz >> 1;
+    
+    #pragma omp parallel for schedule(static, 1)
     for (int i = 0; i < n; i++)
     for (int y = 0; y < h; y++)
     for (int x = 0; x < h; x++)
@@ -109,7 +148,7 @@ static void maxPool2x2(int sz, int n, const float* bufIn, float* bufOut)
         float v1 = bufIn[sz*sz*i + sz*(y*2)   + (x*2+1)];
         float v2 = bufIn[sz*sz*i + sz*(y*2+1) + (x*2)];
         float v3 = bufIn[sz*sz*i + sz*(y*2+1) + (x*2+1)];
-        bufOut[i*h*h + x + h*y] = MAX(MAX(MAX(v0, v1), v2), v3);
+        bufOut[i*h*h + x + h*y] = MAX(MAX(v0, v1), MAX(v2, v3));
     }
 }
 
@@ -122,30 +161,30 @@ void evalNetwork(float *buf0) {
     printf("Starting inference.\n");
     fflush(stdout);
 
-    evalConv(0, buf0, buf1);
-    evalConv(1, buf1, buf0);
-    maxPool2x2(224, 64, buf0, buf1);
-    evalConv(2, buf1, buf0);
-    evalConv(3, buf0, buf1);
-    maxPool2x2(112, 128, buf1, buf0);
-    evalConv(4, buf0, buf1);
-    evalConv(5, buf1, buf0);
-    evalConv(6, buf0, buf1);
-    evalConv(7, buf1, buf0);
-    maxPool2x2(56, 256, buf0, buf1);
-    evalConv(8, buf1, buf0);
-    evalConv(9, buf0, buf1);
-    evalConv(10, buf1, buf0);
-    evalConv(11, buf0, buf1);
-    maxPool2x2(28, 512, buf1, buf0);
-    evalConv(12, buf0, buf1);
-    evalConv(13, buf1, buf0);
-    evalConv(14, buf0, buf1);
-    evalConv(15, buf1, buf0);
-    maxPool2x2(14, 512, buf0, buf1);
-    evalDense(0, buf1, buf0);
-    evalDense(1, buf0, buf1);
-    evalDense(2, buf1, buf0);
+    evalConv(0, buf0, buf1);  
+    evalConv(1, buf1, buf0);  
+    maxPool2x2(224, 64, buf0, buf1);  
+    evalConv(2, buf1, buf0);  
+    evalConv(3, buf0, buf1);  
+    maxPool2x2(112, 128, buf1, buf0);  
+    evalConv(4, buf0, buf1);  
+    evalConv(5, buf1, buf0);  
+    evalConv(6, buf0, buf1);  
+    evalConv(7, buf1, buf0);  
+    maxPool2x2(56, 256, buf0, buf1);  
+    evalConv(8, buf1, buf0);  
+    evalConv(9, buf0, buf1);  
+    evalConv(10, buf1, buf0);  
+    evalConv(11, buf0, buf1);  
+    maxPool2x2(28, 512, buf1, buf0);  
+    evalConv(12, buf0, buf1);  
+    evalConv(13, buf1, buf0);  
+    evalConv(14, buf0, buf1);  
+    evalConv(15, buf1, buf0);  
+    maxPool2x2(14, 512, buf0, buf1);  
+    evalDense(0, buf1, buf0);  
+    evalDense(1, buf0, buf1);  
+    evalDense(2, buf1, buf0);  
 
     printf("Done.\n\n");
     fflush(stdout);
