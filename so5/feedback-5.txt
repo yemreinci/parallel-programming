@@ -1,0 +1,12 @@
+-1
+
+There is a bug in the way you use nested parallelism here, and the code creates
+way more threads than is needed. You can try this yourself by running
+`OMP_NUM_THREADS=100 ./so-benchmark 100000000` and see the code crash. Note that
+CPUs with over 100 hardware threads are nowadays commonly available. Instead of
+using nested parallelism, you could use one `omp parallel` section in `psort`
+and then use `omp task` in recursive calls to `parallel_qsort`.
+
+--
+Grading by:
+henkkuli
