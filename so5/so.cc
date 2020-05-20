@@ -61,7 +61,8 @@ bool parallel_qsort(int n, T* data, T* temp, int n_thr) {
     int num_blocks = (n + block_sz - 1) / block_sz;
     std::vector< std::pair<T, int> > mids(num_blocks);
 
-    #pragma omp parallel num_threads(num_blocks)
+    #pragma omp parallel for
+    for (int thread_n = 0; thread_n < num_blocks; thread_n++)
     {
         int thread_n = omp_get_thread_num();
         int i = block_sz * omp_get_thread_num();
@@ -81,18 +82,12 @@ bool parallel_qsort(int n, T* data, T* temp, int n_thr) {
 
     std::copy(temp, temp+n, data);
 
-    #pragma omp parallel sections 
-    {
-        #pragma omp section
-        {
-            parallel_qsort(mid, data, temp, n_thr/2);
-        }
+    #pragma omp task
+    parallel_qsort(mid, data, temp, n_thr/2);
 
-        #pragma omp section
-        {
-            parallel_qsort(n - mid - 1, data + mid + 1, temp + mid + 1, (n_thr+1) / 2);
-        }
-    }
+    parallel_qsort(n - mid - 1, data + mid + 1, temp + mid + 1, (n_thr+1) / 2);
+
+    #pragma omp taskwait
 
     return false;
 }
@@ -104,7 +99,11 @@ void psort(int n, data_t* data) {
     
     int n_thr = 1 << (63 - __lzcnt64(omp_get_max_threads()));
 
-    bool flag = parallel_qsort(n, data, temp, n_thr);
+    bool flag;
+    
+    #pragma omp parallel
+    #pragma omp single
+    flag = parallel_qsort(n, data, temp, n_thr);
 
     if (flag) {
         std::copy(temp, temp+n, data);
