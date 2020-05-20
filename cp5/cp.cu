@@ -114,4 +114,5 @@ void correlate(int ny, int nx, const float* data, float* result) {
 
     CHECK(cudaMemcpy(result, resultGPU, ny * ny * sizeof(float), cudaMemcpyDeviceToHost));
     CHECK(cudaFree(resultGPU));
+    CHECK(cudaFree(dataGPU));
 }
