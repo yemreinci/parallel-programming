@@ -1,0 +1,10 @@
+-1
+
+There is a memory leak in your code. You are not freeing `dataGPU`.
+
+If you want to take part in the contest, you have to fix this and resubmit your
+code.
+
+--
+Grading by:
+henkkuli
