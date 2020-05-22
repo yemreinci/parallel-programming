@@ -161,9 +161,11 @@ static void test(ppc::random& rng, int ny, int nx, int y0, int x0,
     e.y1 = y1;
     e.x1 = x1;
     if (binary) {
+	std::bernoulli_distribution coin(0.5);
+	bool flip = coin(rng);
         for (int c = 0; c < 3; ++c) {
-            e.inner[c] = 1.0f;
-            e.outer[c] = 0.0f;
+            e.inner[c] = flip ? 0.0f : 1.0f;
+            e.outer[c] = flip ? 1.0f : 0.0f;
         }
     }
     else {
