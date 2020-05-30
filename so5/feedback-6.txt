@@ -1,0 +1,15 @@
+0
+
+I don't think I've seen many parallel partition functions implemented. While it
+may give you better cpu utilization, there's also some additional copying needed.
+The mixture of nested parallel sections and tasking makes it quite difficult to
+reason about the parallelism. For example, in multiple runs of
+
+    strace -c -e trace=clone ./so-benchmark 100000000
+
+the number of threads the solution actually spawned seemed to randomly vary
+between 7, 28, 49, and 70.
+
+--
+Grading by:
+juhok
